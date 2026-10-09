@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Radio-Agent Walkman</title>
+<style>
+:root{--bg:#0b0e14;--card:#141a28;--line:#24304d;--txt:#e8eefc;--dim:#8b98b8;--neon:#00f0ff;--rec:#ff3355;--ok:#00ffa3}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--txt);font:15px/1.45 system-ui;max-width:480px;margin:0 auto;padding:12px 12px 28px}
+h1{font-size:18px;margin:8px 0}h2{font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:var(--dim);margin:0 0 8px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px;margin:10px 0}
+.rec-dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--rec);margin-right:6px;animation:blink 1.2s infinite}
+.idle-dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--ok);margin-right:6px}
+@keyframes blink{50%{opacity:.25}}
+.big{font-size:20px;font-weight:800}.meta{font-size:12px;color:var(--dim)}
+.cassette{background:#0a0f1c;border:1px solid var(--line);border-radius:12px;padding:10px;margin:8px 0}
+.reels{display:flex;justify-content:space-between;padding:4px 18px}
+.reel{width:44px;height:44px;border-radius:50%;border:3px solid var(--dim);position:relative}
+.reel::before,.reel::after{content:"";position:absolute;background:var(--dim);left:50%;top:50%}
+.reel::before{width:34px;height:6px;margin:-3px 0 0 -17px}.reel::after{width:6px;height:34px;margin:-17px 0 0 -3px}
+.playing .reel{animation:spin 1.6s linear infinite;border-color:var(--neon)}
+.playing .reel::before,.playing .reel::after{background:var(--neon)}
+@keyframes spin{to{transform:rotate(360deg)}}
+.track{font-weight:700;margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.transport{display:flex;gap:8px;margin-top:10px}
+.transport button{flex:1;font-size:18px;padding:10px 0;border-radius:12px;border:1px solid var(--line);background:#16203a;color:var(--txt);cursor:pointer}
+.transport button.on{border-color:var(--neon);box-shadow:0 0 10px rgba(0,240,255,.4)}
+.progress{height:8px;background:#05080f;border-radius:6px;margin-top:10px;overflow:hidden}
+.progress i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--neon),var(--ok))}
+ul{list-style:none;margin:0;padding:0;max-height:320px;overflow:auto}
+li{padding:9px 8px;border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:center;cursor:pointer;font-size:13px}
+li:last-child{border-bottom:0}li.sel{background:#0d1830;border-radius:8px}
+li .t{margin-left:auto;font-size:11px;color:var(--dim);white-space:nowrap}
+.job{display:flex;gap:8px;padding:8px;border:1px solid var(--line);border-radius:10px;margin:6px 0;font-size:13px}
+.job b{color:var(--neon)}.job .cd{margin-left:auto;color:var(--ok);font-variant-numeric:tabular-nums;white-space:nowrap}
+#faxview{position:fixed;inset:0;background:rgba(0,0,0,.92);display:none;align-items:center;justify-content:center;z-index:20;padding:12px}
+#faxview img{max-width:100%;max-height:92vh;background:#fff;border-radius:8px}
+#err{display:none;background:#3a1020;border:1px solid var(--rec);border-radius:12px;padding:10px;margin:10px 0;font-size:13px}
+</style>
+</head>
+<body>
+<h1>📻 Radio-Agent <span class="meta" id="radioName">…</span></h1>
+<div id="err">Server nicht erreichbar – läuft der WebApp-Dienst auf dem Pi?</div>
+
+<div class="panel"><h2><span id="statedot" class="idle-dot"></span><span id="statetxt">Bereit</span></h2>
+<div class="big" id="nowSender">–</div>
+<div class="meta" id="nowMeta"></div></div>
+
+<div class="panel"><h2>Dateiliste</h2>
+<div class="cassette" id="cass">
+<div class="reels"><div class="reel"></div><div class="reel"></div></div>
+<div class="track" id="track">lädt …</div>
+<div class="meta"><span id="tcur">00:00</span> / <span id="tdur">--:--</span></div>
+<div class="progress"><i id="bar"></i></div>
+<div class="transport">
+<button id="bPrev">⏮</button><button id="bPlay">▶</button><button id="bStop">⏹</button><button id="bNext">⏭</button><button id="bRep">🔁</button>
+</div></div>
+<audio id="au" preload="metadata"></audio>
+<ul id="files"></ul></div>
+
+<div class="panel"><h2>Cron – nächste Jobs</h2><div id="jobs"><span class="meta">lädt …</span></div></div>
+<div id="faxview" onclick="this.style.display='none'"><img id="faximg" alt="Fax"></div>
+
+<script>
+const $=id=>document.getElementById(id);
+const fmt=s=>{s=Math.max(0,Math.floor(s));return String(Math.floor(s/60)).padStart(2,"0")+":"+String(s%60).padStart(2,"0");};
+const fmtDT=iso=>{const d=new Date(iso);return d.toLocaleString("de-DE",{weekday:"short",hour:"2-digit",minute:"2-digit"});};
+let FILES=[],idx=-1,repeat=false;
+const au=$("au");
+function icon(f){return f.kind==="fax"?"📠":"🎵";}
+async function load(){
+ try{
+  const [now,files,jobs]=await Promise.all([fetch("api/now").then(r=>r.json()),fetch("api/files").then(r=>r.json()),fetch("api/jobs").then(r=>r.json())]);
+  $("err").style.display="none";
+  $("radioName").textContent=(now.radio&&now.radio.name||"?")+" · "+(now.radio&&now.radio.location||"");
+  if(now.active){$("statedot").className="rec-dot";$("statetxt").textContent="REC läuft";
+   $("nowSender").textContent=now.active.sender+" · "+Math.round(now.active.freqHz/1000)+" kHz";
+   $("nowMeta").textContent="Mode "+now.active.mode+" · seit "+now.active.since+" UTC";}
+  else{$("statedot").className="idle-dot";$("statetxt").textContent="Bereit";
+   $("nowSender").textContent="keine Aufnahme aktiv";$("nowMeta").textContent="nächster Job siehe unten";}
+  FILES=files;renderFiles();
+  $("jobs").innerHTML=jobs.length?jobs.map(j=>{const mins=Math.max(0,Math.round((new Date(j.at)-Date.now())/60000));
+   return `<div class="job">⏰ <span><b>${j.sender}</b> · ${Math.round(j.freqHz/1000)} kHz ${j.mode} (${j.sprache})<br><span class="meta">${fmtDT(j.at)}</span></span><span class="cd">-${mins} min</span></div>`;}).join(""):'<span class="meta">keine Jobs geplant</span>';
+ }catch(e){$("err").style.display="block";}
+}
+function renderFiles(){$("files").innerHTML=FILES.length?FILES.map((f,i)=>{
+ const mb=(f.size/1048576).toFixed(1);
+ return `<li data-i="${i}" class="${i===idx?"sel":""}">${icon(f)}<span>${f.sender} · ${f.name}</span><span class="t">${mb} MB</span></li>`;}).join(""):'<li><span class="meta">Archiv leer – erste Aufnahme steht aus</span></li>';
+ document.querySelectorAll("#files li[data-i]").forEach(li=>li.onclick=()=>select(+li.dataset.i,true));}
+function select(i,auto){idx=i;const f=FILES[i];
+ if(f.kind==="fax"){$("faximg").src=f.url;$("faxview").style.display="flex";$("track").textContent="📠 "+f.name;return;}
+ au.src=f.url;$("track").textContent="🎵 "+f.sender+" · "+f.name;
+ if(auto)au.play().catch(()=>{});}
+au.onplay=()=>{$("cass").classList.add("playing");$("bPlay").textContent="⏸";$("bPlay").classList.add("on");};
+au.onpause=()=>{$("cass").classList.remove("playing");$("bPlay").textContent="▶";$("bPlay").classList.remove("on");};
+au.ontimeupdate=()=>{if(au.duration){$("tcur").textContent=fmt(au.currentTime);$("tdur").textContent=fmt(au.duration);$("bar").style.width=(100*au.currentTime/au.duration)+"%";}};
+au.onended=()=>{if(repeat)au.play();else next();};
+function next(){const a=FILES.filter(f=>f.kind==="audio");if(!a.length)return;
+ let j=a.indexOf(FILES[idx]);select(FILES.indexOf(a[(j+1)%a.length]),true);}
+function prev(){const a=FILES.filter(f=>f.kind==="audio");if(!a.length)return;
+ let j=a.indexOf(FILES[idx]);select(FILES.indexOf(a[(j-1+a.length)%a.length]),true);}
+$("bPlay").onclick=()=>{if(idx<0){const a=FILES.findIndex(f=>f.kind==="audio");if(a>=0)select(a,true);return;}const f=FILES[idx];if(f.kind!=="audio")return;au.paused?au.play().catch(()=>{}):au.pause();};
+$("bStop").onclick=()=>{au.pause();au.currentTime=0;};
+$("bNext").onclick=next;$("bPrev").onclick=prev;
+$("bRep").onclick=()=>{repeat=!repeat;$("bRep").classList.toggle("on",repeat);};
+load();setInterval(load,60000);
+</script>
+</body>
+</html>

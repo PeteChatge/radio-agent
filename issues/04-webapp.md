@@ -1,6 +1,6 @@
 # 04 – Handy-WebApp index.html :18088
 
-Status: pending
+Status: resolved (Server läuft als systemd radio-webapp, /archive + APIs + Walkman v1 live)
 Type: task
 Blocked by: 01 (State-API-Form aus Recorder-Probe)
 
