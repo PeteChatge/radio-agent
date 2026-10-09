@@ -1,6 +1,6 @@
 # 02 – Schedule-Seed deutsch.json
 
-Status: pending
+Status: resolved (Seed 16 Eintraege, A26; Refresh -> Agent-Cron Ticket 03)
 Type: task
 Blocked by: 01
 
