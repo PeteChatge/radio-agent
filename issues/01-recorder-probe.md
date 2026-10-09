@@ -1,6 +1,6 @@
 # 01 – Recorder-Probe (WS-Tune + 60s-mp3)
 
-Status: pending
+Status: resolved
 Type: task
 
 ## Ziel
