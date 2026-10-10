@@ -127,9 +127,27 @@ def mean_db(path):
     return None
 
 
+def job_end(job, now):
+    """Ende-Datetime der laufenden Aussendung (UTC)."""
+    py2seed = {0: 2, 1: 3, 2: 4, 3: 5, 4: 6, 5: 7, 6: 1}
+    try:
+        eh, em = (int(x) for x in job["endeUTC"].split(":")[:2])
+    except (ValueError, KeyError):
+        return None
+    end = now.replace(hour=eh, minute=em, second=0, microsecond=0)
+    if end <= now:
+        end += dt.timedelta(days=1)
+    return end
+
+
 def record_chunk(job):
     global current_proc
-    ts = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d_%H%M")
+    now = dt.datetime.now(dt.timezone.utc)
+    end = job_end(job, now)
+    secs = CHUNK
+    if end is not None:
+        secs = max(60, min(CHUNK, int((end - now).total_seconds())))
+    ts = now.strftime("%Y%m%d_%H%M")
     sdir = os.path.join(ARCH, "audio", slug(job.get("sender")))
     os.makedirs(sdir, exist_ok=True)
     base = f"{ts}_{job['freqHz'] // 1000}kHz_{job['mode']}_{slug(job.get('sender'))}"
@@ -139,7 +157,7 @@ def record_chunk(job):
     write_now(job)
     with open(os.path.join(BASE, "last-rec.log"), "wb") as lf:
         current_proc = subprocess.Popen(
-            [PY, REC, job["profil"], str(job["freqHz"]), job["mode"], str(CHUNK), out],
+            [PY, REC, job["profil"], str(job["freqHz"]), job["mode"], str(secs), out],
             stdout=lf, stderr=subprocess.STDOUT)
     t0 = time.monotonic()
     while current_proc.poll() is None and not stop:
@@ -193,7 +211,7 @@ def record_chunk(job):
     with open(out + ".json", "w", encoding="utf-8") as f:
         json.dump({"sender": job.get("sender"), "freqHz": job.get("freqHz"),
                    "mode": job.get("mode"), "sprache": job.get("sprache"),
-                   "profil": job.get("profil"), "chunk_s": CHUNK,
+                   "profil": job.get("profil"), "chunk_s": secs,
                    "mean_db": pegel, "lra": lra, "smeter_max": smax,
                    "recorded_utc": dt.datetime.now(dt.timezone.utc).isoformat()},
                   f, ensure_ascii=False, indent=1)
