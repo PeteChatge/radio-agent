@@ -178,7 +178,7 @@
    ]
   },
   {
-   "bemerkung": "Seewetterbericht Stimme, deutsch",
+   "bemerkung": "Seewetterbericht Stimme, deutsch | 10.10.: EIBI kennt 5905 nicht, Aufnahme nur musikartiges Rauschen -> pausiert bis Recherche (B-Saison).",
    "endeUTC": "16:30",
    "freqHz": 5905000,
    "mode": "usb",
@@ -196,7 +196,8 @@
     5,
     6,
     7
-   ]
+   ],
+   "aktiv": false
   },
   {
    "bemerkung": "Exot, 10 kW ND, Versuch – Empfang unsicher",

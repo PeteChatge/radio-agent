@@ -71,6 +71,8 @@ def active_job(entries, now):
     py2seed = {0: 2, 1: 3, 2: 4, 3: 5, 4: 6, 5: 7, 6: 1}
     best = None
     for e in entries:
+        if e.get("aktiv") is False:
+            continue
         if e.get("mode") not in AUDIO_MODES or not e.get("startUTC") or not e.get("endeUTC"):
             continue
         try:
