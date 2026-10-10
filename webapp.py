@@ -12,12 +12,23 @@ import datetime as dt
 import json
 import mimetypes
 import os
+import subprocess
+import time
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 ROOT = "/opt/radio-agent/webapp-root"
 ARCH = "/archive"
 PORT = 18088
+
+
+def daemon_running():
+    try:
+        r = subprocess.run(["systemctl", "is-active", "radio-recorder"],
+                           capture_output=True, text=True, timeout=10)
+        return r.stdout.strip() == "active"
+    except OSError:
+        return False
 
 
 def scan(kind):
@@ -127,6 +138,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(scan("audio") + scan("fax"))
         if self.path == "/api/jobs":
             return self.send_json(next_jobs())
+        if self.path == "/api/daemon":
+            return self.send_json({"running": daemon_running()})
         if self.path.startswith("/audio/") or self.path.startswith("/fax/"):
             kind, rest = self.path[1:].split("/", 1)
             base = os.path.join(ARCH, "audio" if kind == "audio" else "fax")
@@ -134,6 +147,21 @@ class Handler(BaseHTTPRequestHandler):
             if not p.startswith(os.path.realpath(base) + os.sep):
                 return self.send_error(403)
             return self.send_file(p)
+        return self.send_error(404)
+
+    def do_POST(self):
+        if self.path == "/api/daemon":
+            try:
+                n = int(self.headers.get("Content-Length", 0))
+                action = json.loads(self.rfile.read(n) or b"{}").get("action")
+            except (ValueError, OSError):
+                return self.send_error(400)
+            if action not in ("start", "stop"):
+                return self.send_error(400)
+            r = subprocess.run(["sudo", "systemctl", action, "radio-recorder"],
+                               capture_output=True, timeout=30)
+            time.sleep(2)
+            return self.send_json({"running": daemon_running(), "rc": r.returncode})
         return self.send_error(404)
 
 

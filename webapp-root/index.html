@@ -44,7 +44,9 @@ li .t{margin-left:auto;font-size:11px;color:var(--dim);white-space:nowrap}
 
 <div class="panel"><h2><span id="statedot" class="idle-dot"></span><span id="statetxt">Bereit</span></h2>
 <div class="big" id="nowSender">–</div>
-<div class="meta" id="nowMeta"></div></div>
+<div class="meta" id="nowMeta"></div>
+<div class="transport"><button id="bDaemon">⏺ Daemon starten</button></div>
+<div class="meta">Manueller An/Aus-Schalter für den 24/7-Recorder.</div></div>
 
 <div class="panel"><h2>Dateiliste</h2>
 <div class="cassette" id="cass">
@@ -68,9 +70,20 @@ const fmtDT=iso=>{const d=new Date(iso);return d.toLocaleString("de-DE",{weekday
 let FILES=[],idx=-1,repeat=false;
 const au=$("au");
 function icon(f){return f.kind==="fax"?"📠":"🎵";}
+async function daemon(on){
+ const r=await fetch("api/daemon",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:on?"start":"stop"})}).then(r=>r.json()).catch(()=>null);
+ paintDaemon(r&&r.running);
+}
+function paintDaemon(running){
+ const b=$("bDaemon");
+ if(running){b.textContent="⏹ Daemon stoppen (läuft)";b.classList.add("on");}
+ else{b.textContent="⏺ Daemon starten (aus)";b.classList.remove("on");}
+}
+$("bDaemon").onclick=async()=>{const r=await fetch("api/daemon").then(r=>r.json()).catch(()=>null);daemon(!(r&&r.running));};
 async function load(){
  try{
-  const [now,files,jobs]=await Promise.all([fetch("api/now").then(r=>r.json()),fetch("api/files").then(r=>r.json()),fetch("api/jobs").then(r=>r.json())]);
+  const [now,files,jobs,daemon]=await Promise.all([fetch("api/now").then(r=>r.json()),fetch("api/files").then(r=>r.json()),fetch("api/jobs").then(r=>r.json()),fetch("api/daemon").then(r=>r.json()).catch(()=>({running:false}))]);
+  paintDaemon(daemon.running);
   $("err").style.display="none";
   $("radioName").textContent=(now.radio&&now.radio.name||"?")+" · "+(now.radio&&now.radio.location||"");
   if(now.active){$("statedot").className="rec-dot";$("statetxt").textContent="REC läuft";
