@@ -1,6 +1,6 @@
 # 05 – Recorder-Daemon (Schedule -> mp3 + now.json + Retention)
 
-Status: pending
+Status: resolved (läuft als systemd radio-recorder, 1. Chunk verifiziert 10.10.)
 Type: task
 Blocked by: -
 
