@@ -39,6 +39,7 @@ def profile_cfg(profile):
         "rtlsdr|10m": (28000000, 2048000), "rtlsdr|40m": (7500000, 1024000),
         "rtlsdr|80m": (3500000, 1024000), "rtlsdr|160m": (1500000, 1024000),
         "rtlsdr|am": (1000000, 1024000), "rtlsdr|adsb1090": (1090000000, 2400000),
+        "rtlsdr|mw": (700000, 1024000),
         "sdrplay|70cm": (443500000, 4000000), "sdrplay|125cm": (223500000, 4000000),
         "sdrplay|2m": (146000000, 4000000), "sdrplay|6m": (52000000, 4000000),
         "sdrplay|10m": (28850000, 2000000), "sdrplay|cb": (27000000, 2000000),
@@ -50,6 +51,7 @@ def profile_cfg(profile):
         "sdrplay|49m": (6050000, 500000), "sdrplay|41m": (7325000, 250000),
         "sdrplay|31m": (9650000, 500000), "sdrplay|25m": (11850000, 500000),
         "sdrplay|22m": (13720000, 250000), "sdrplay|ism433": (433000000, 2000000),
+        "sdrplay|75m": (3975000, 250000),
         "sdrplay|adsb1090": (1090000000, 4000000),
         "sdrplay|fax80": (3900000, 1000000), "sdrplay|fax49": (7900000, 1000000),
     }
@@ -154,6 +156,7 @@ async def main():
         # 4. 0x02-Frames sammeln (Abbruch falls 45 s kein Audio -> falsches Profil)
         dec = ImaDecoder()
         samples: list = []
+        smeter: list = []
         n_audio = n_other = 0
         t_start = time.monotonic()
         t_end = t_start + secs
@@ -166,6 +169,16 @@ async def main():
                     dec.feed(msg[1:], samples)
                 else:
                     n_other += 1
+                    if isinstance(msg, str):
+                        try:
+                            dd = json.loads(msg)
+                        except json.JSONDecodeError:
+                            dd = None
+                        if dd and dd.get("type") == "smeter":
+                            try:
+                                smeter.append(float(dd.get("value", 0)))
+                            except (TypeError, ValueError):
+                                pass
                     if n_audio == 0 and time.monotonic() - t_start > 45:
                         print("KEIN-AUDIO-45s – Abbruch (Profilwechsel prüfen)", flush=True)
                         return
@@ -184,7 +197,13 @@ async def main():
             w.writeframes(pcm)
         subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", wav,
                         "-ar", "12000", "-ac", "1", "-b:a", "64k", out_mp3], check=True)
-        print(f"FERTIG {out_mp3}", flush=True)
+        smax = max(smeter) if smeter else 0.0
+        savg = sum(smeter) / len(smeter) if smeter else 0.0
+        print(f"FERTIG {out_mp3} SMETER avg={savg:.2e} max={smax:.2e}", flush=True)
+        with open(out_mp3 + ".json", "w", encoding="utf-8") as f:
+            json.dump({"rms": round(rms, 1), "smeter_avg": savg, "smeter_max": smax,
+                       "n_audio": n_audio, "dauer_s": round(len(samples) / RATE, 1)},
+                      f)
 
 
 asyncio.run(main())

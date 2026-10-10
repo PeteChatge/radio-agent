@@ -23,7 +23,22 @@ NOW = os.path.join(ARCH, "now.json")
 CHUNK = 600
 TICK = 30
 RETENTION_DAYS = 60
-SCHWELLE_DB = -35.0  # darunter = mies -> loeschen
+def loudness_range(path):
+    """Loudness Range (LRA) via ebur128, None bei Fehler. Sprache/Musik: hoch,
+    Dauerrauschen/Dauertraeger: niedrig."""
+    import re
+    try:
+        r = subprocess.run(["ffmpeg", "-v", "info", "-i", path, "-af", "ebur128=peak=true",
+                            "-f", "null", "-"], capture_output=True, text=True, timeout=180)
+        m = re.search(r"LRA:\s*(-?[0-9.]+)", r.stderr)
+        return float(m.group(1)) if m else None
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+
+
+SCHWELLE_DB = -35.0     # darunter = Stille -> Quarantaene
+SCHWELLE_LRA = 4.0      # darunter = flach wie Rauschen -> Quarantaene
+SCHWELLE_SMETER = 1e-7  # darunter = kein Signal an der Antenne -> Quarantaene
 AUDIO_MODES = ("am", "usb", "lsb", "nfm", "wfm")
 PY = os.path.join(BASE, "venv", "bin", "python")
 REC = os.path.join(BASE, "record.py")
@@ -145,24 +160,41 @@ def record_chunk(job):
         time.sleep(60)
         return
     pegel = mean_db(wav if os.path.exists(wav) else out)
+    lra = loudness_range(wav if os.path.exists(wav) else out)
+    try:
+        with open(out + ".json", encoding="utf-8") as f:
+            rec = json.load(f)
+    except OSError:
+        rec = {}
+    smax = rec.get("smeter_max", 0) or 0
     try:
         if os.path.exists(wav):
             os.remove(wav)
     except OSError:
         pass
+    grund = None
     if pegel is not None and pegel < SCHWELLE_DB:
+        grund = f"stille {pegel:.1f}dB"
+    elif lra is not None and lra < SCHWELLE_LRA:
+        grund = f"flach LRA {lra:.1f}LU"
+    elif smax < SCHWELLE_SMETER:
+        grund = f"kein Signal S={smax:.1e}"
+    if grund is not None:
+        # Quarantaene statt Loeschen: Stichprobe bleibt hoerbar
+        qdir = os.path.join(ARCH, "quarantaene", slug(job.get("sender")))
+        os.makedirs(qdir, exist_ok=True)
         for p in (out, out + ".json"):
             try:
-                os.remove(p)
+                os.rename(p, os.path.join(qdir, os.path.basename(p)))
             except OSError:
                 pass
-        log(f"MIES-GELOESCHT pegel={pegel:.1f}dB", base)
+        log(f"QUARANTAENE ({grund})", base)
         return
     with open(out + ".json", "w", encoding="utf-8") as f:
         json.dump({"sender": job.get("sender"), "freqHz": job.get("freqHz"),
                    "mode": job.get("mode"), "sprache": job.get("sprache"),
                    "profil": job.get("profil"), "chunk_s": CHUNK,
-                   "mean_db": pegel,
+                   "mean_db": pegel, "lra": lra, "smeter_max": smax,
                    "recorded_utc": dt.datetime.now(dt.timezone.utc).isoformat()},
                   f, ensure_ascii=False, indent=1)
     log(f"REC-OK pegel={pegel if pegel is None else round(pegel, 1)}dB", base)
@@ -200,7 +232,7 @@ def collect_fax(seen):
 def retention():
     cutoff = time.time() - RETENTION_DAYS * 86400
     n = 0
-    for kind in ("audio", "fax"):
+    for kind in ("audio", "fax", "quarantaene"):
         base = os.path.join(ARCH, kind)
         for root, _dirs, files in os.walk(base):
             for name in files:
