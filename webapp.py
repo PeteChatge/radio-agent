@@ -135,7 +135,9 @@ class Handler(BaseHTTPRequestHandler):
                 active = None
             return self.send_json({"active": active, "radio": radio_state()})
         if self.path == "/api/files":
-            return self.send_json(scan("audio") + scan("fax") + scan("quarantaene"))
+            allf = scan("audio") + scan("fax") + scan("quarantaene")
+            allf.sort(key=lambda e: e["mtime"], reverse=True)
+            return self.send_json(allf)
         if self.path == "/api/jobs":
             return self.send_json(next_jobs())
         if self.path == "/api/daemon":
