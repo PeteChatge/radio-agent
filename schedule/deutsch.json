@@ -2,7 +2,7 @@
  "entries": [
   {
    "bemerkung": "A26-Saison (Sommer), gueltig bis ca. 25.10.2026 – danach B-Saison, woechentlicher Refresh noetig",
-   "endeUTC": "19:00",
+   "endeUTC": "18:57",
    "freqHz": 9570000,
    "mode": "am",
    "prio": 10,
@@ -318,9 +318,380 @@
    "sprache": "de",
    "startUTC": null,
    "tage": []
+  },
+  {
+   "sender": "Voice of Turkey",
+   "freqHz": 9840000,
+   "mode": "am",
+   "startUTC": "17:30",
+   "endeUTC": "18:25",
+   "tage": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+   ],
+   "sprache": "de",
+   "prio": 9,
+   "profil": "sdrplay|31m",
+   "quelle": "short-wave.info Deutsch-Tabelle, DB 24.09.26",
+   "bemerkung": "500 kW Emirler"
+  },
+  {
+   "sender": "Radio Romania International",
+   "freqHz": 11750000,
+   "mode": "am",
+   "startUTC": "18:00",
+   "endeUTC": "18:57",
+   "tage": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+   ],
+   "sprache": "de",
+   "prio": 9,
+   "profil": "sdrplay|25m",
+   "quelle": "short-wave.info Deutsch-Tabelle, DB 24.09.26",
+   "bemerkung": "300 kW, Strahl 307"
+  },
+  {
+   "sender": "China Radio International",
+   "freqHz": 11650000,
+   "mode": "am",
+   "startUTC": "18:00",
+   "endeUTC": "19:57",
+   "tage": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+   ],
+   "sprache": "de",
+   "prio": 8,
+   "profil": "sdrplay|25m",
+   "quelle": "short-wave.info Deutsch-Tabelle, DB 24.09.26",
+   "bemerkung": "500 kW Urumqi"
+  },
+  {
+   "sender": "Radio Taiwan Int.",
+   "freqHz": 5900000,
+   "mode": "am",
+   "startUTC": "19:00",
+   "endeUTC": "19:30",
+   "tage": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+   ],
+   "sprache": "de",
+   "prio": 8,
+   "profil": "sdrplay|49m",
+   "quelle": "short-wave.info Deutsch-Tabelle, DB 24.09.26",
+   "bemerkung": "100 kW Sofia-Relais"
+  },
+  {
+   "sender": "Radio Romania International",
+   "freqHz": 9650000,
+   "mode": "am",
+   "startUTC": "06:00",
+   "endeUTC": "06:27",
+   "tage": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+   ],
+   "sprache": "de",
+   "prio": 8,
+   "profil": "sdrplay|31m",
+   "quelle": "short-wave.info Deutsch-Tabelle, DB 24.09.26",
+   "bemerkung": "300 kW Morgen"
+  },
+  {
+   "sender": "Radio Romania International",
+   "freqHz": 9700000,
+   "mode": "am",
+   "startUTC": "06:00",
+   "endeUTC": "06:27",
+   "tage": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+   ],
+   "sprache": "de",
+   "prio": 8,
+   "profil": "sdrplay|31m",
+   "quelle": "short-wave.info Deutsch-Tabelle, DB 24.09.26",
+   "bemerkung": "300 kW Morgen Alternativ-QRG"
+  },
+  {
+   "sender": "Radio Cairo",
+   "freqHz": 9410000,
+   "mode": "am",
+   "startUTC": "19:00",
+   "endeUTC": "20:00",
+   "tage": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+   ],
+   "sprache": "de",
+   "prio": 7,
+   "profil": "sdrplay|31m",
+   "quelle": "short-wave.info Deutsch-Tabelle, DB 24.09.26",
+   "bemerkung": "125 kW Abis"
+  },
+  {
+   "sender": "China Radio International",
+   "freqHz": 9535000,
+   "mode": "am",
+   "startUTC": "16:00",
+   "endeUTC": "17:57",
+   "tage": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+   ],
+   "sprache": "de",
+   "prio": 7,
+   "profil": "sdrplay|31m",
+   "quelle": "short-wave.info Deutsch-Tabelle, DB 24.09.26",
+   "bemerkung": "150 kW Baoji"
+  },
+  {
+   "sender": "Voice of Korea",
+   "freqHz": 9425000,
+   "mode": "am",
+   "startUTC": "18:00",
+   "endeUTC": "18:57",
+   "tage": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+   ],
+   "sprache": "de",
+   "prio": 7,
+   "profil": "sdrplay|31m",
+   "quelle": "short-wave.info Deutsch-Tabelle, DB 24.09.26",
+   "bemerkung": "200 kW Kujang"
+  },
+  {
+   "sender": "Voice of Korea",
+   "freqHz": 9425000,
+   "mode": "am",
+   "startUTC": "19:00",
+   "endeUTC": "19:57",
+   "tage": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+   ],
+   "sprache": "de",
+   "prio": 7,
+   "profil": "sdrplay|31m",
+   "quelle": "short-wave.info Deutsch-Tabelle, DB 24.09.26",
+   "bemerkung": "200 kW Kujang Spaet"
+  },
+  {
+   "sender": "HCJB Deutsch 49m",
+   "freqHz": 5920000,
+   "mode": "am",
+   "startUTC": "05:00",
+   "endeUTC": "23:00",
+   "tage": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+   ],
+   "sprache": "de",
+   "prio": 6,
+   "profil": "sdrplay|49m",
+   "quelle": "short-wave.info Deutsch-Tabelle, DB 24.09.26",
+   "bemerkung": "Weenermoor 49m-Ausstrahlung"
+  },
+  {
+   "sender": "Europa 24",
+   "freqHz": 6150000,
+   "mode": "am",
+   "startUTC": "07:00",
+   "endeUTC": "17:00",
+   "tage": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+   ],
+   "sprache": "de",
+   "prio": 5,
+   "profil": "sdrplay|49m",
+   "quelle": "short-wave.info Deutsch-Tabelle, DB 24.09.26",
+   "bemerkung": "Datteln, Bodenwelle möglich"
+  },
+  {
+   "sender": "Evang. Missionsgemeinden",
+   "freqHz": 6055000,
+   "mode": "am",
+   "startUTC": "11:30",
+   "endeUTC": "12:00",
+   "tage": [
+    7
+   ],
+   "sprache": "de",
+   "prio": 5,
+   "profil": "sdrplay|49m",
+   "quelle": "short-wave.info Deutsch-Tabelle, DB 24.09.26",
+   "bemerkung": "nur Sa, Nauen"
+  },
+  {
+   "sender": "Voice of Indonesia",
+   "freqHz": 9690000,
+   "mode": "am",
+   "startUTC": "18:00",
+   "endeUTC": "19:00",
+   "tage": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+   ],
+   "sprache": "de",
+   "prio": 5,
+   "profil": "sdrplay|31m",
+   "quelle": "short-wave.info Deutsch-Tabelle, DB 24.09.26",
+   "bemerkung": "Jakarta, 10 kW-Wege"
+  },
+  {
+   "sender": "Kyrgyz Radio",
+   "freqHz": 4010000,
+   "mode": "am",
+   "startUTC": "14:10",
+   "endeUTC": "14:20",
+   "tage": [
+    2,
+    3,
+    4,
+    5,
+    6
+   ],
+   "sprache": "de",
+   "prio": 4,
+   "profil": "sdrplay|75m",
+   "quelle": "short-wave.info Deutsch-Tabelle, DB 24.09.26",
+   "bemerkung": "100 kW Bishkek, exotisch, 10 Min"
+  },
+  {
+   "sender": "Radio Slovakia Int.",
+   "freqHz": 3985000,
+   "mode": "am",
+   "startUTC": "17:00",
+   "endeUTC": "17:30",
+   "tage": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+   ],
+   "sprache": "de",
+   "prio": 3,
+   "profil": "sdrplay|75m",
+   "quelle": "short-wave.info Deutsch-Tabelle, DB 24.09.26",
+   "bemerkung": "nur 1 kW Kall - schwach, Versuch"
+  },
+  {
+   "sender": "Schweizer Radio SRF",
+   "freqHz": 3985000,
+   "mode": "am",
+   "startUTC": "16:00",
+   "endeUTC": "17:00",
+   "tage": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+   ],
+   "sprache": "de",
+   "prio": 3,
+   "profil": "sdrplay|75m",
+   "quelle": "short-wave.info Deutsch-Tabelle, DB 24.09.26",
+   "bemerkung": "nur 1 kW Kall - schwach, Versuch"
+  },
+  {
+   "sender": "DWD Pinneberg Stimme 6180",
+   "freqHz": 6180000,
+   "mode": "usb",
+   "startUTC": "16:00",
+   "endeUTC": "16:30",
+   "tage": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+   ],
+   "sprache": "de",
+   "prio": 6,
+   "profil": "sdrplay|49m",
+   "quelle": "short-wave.info Deutsch-Tabelle, DB 24.09.26",
+   "bemerkung": "Alternativ-QRG zu 5905, mit pausiert",
+   "aktiv": false
   }
  ],
- "hinweis": "Zeiten UTC. Refresh woechentlich (A26 endet ca. 25.10.2026, dann B-Saison pruefen).",
+ "hinweis": "Zeiten UTC. Quellen: short-wave.info (DB 24.09.26), EIBI A26. Refresh woechentlich (B-Saison ab ca. 25.10.).",
  "season": "A26",
  "stand": "2026-10-09"
 }
