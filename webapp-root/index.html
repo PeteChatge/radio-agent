@@ -48,7 +48,7 @@ li .t{margin-left:auto;font-size:11px;color:var(--dim);white-space:nowrap}
 <div class="transport"><button id="bDaemon">⏺ Daemon starten</button></div>
 <div class="meta">Manueller An/Aus-Schalter für den 24/7-Recorder.</div></div>
 
-<div class="panel"><h2>Dateiliste</h2>
+<div class="panel"><h2>Dateiliste <button id="bReload" style="float:right;font-size:14px;padding:2px 10px;border-radius:8px;border:1px solid var(--line);background:#16203a;color:var(--txt)" title="Liste neu laden">↻</button></h2>
 <div class="cassette" id="cass">
 <div class="reels"><div class="reel"></div><div class="reel"></div></div>
 <div class="track" id="track">lädt …</div>
@@ -116,6 +116,7 @@ $("bPlay").onclick=()=>{if(idx<0){const a=FILES.findIndex(f=>f.kind==="audio");i
 $("bStop").onclick=()=>{au.pause();au.currentTime=0;};
 $("bNext").onclick=next;$("bPrev").onclick=prev;
 $("bRep").onclick=()=>{repeat=!repeat;$("bRep").classList.toggle("on",repeat);};
+$("bReload").onclick=()=>load();
 load();setInterval(load,60000);
 </script>
 </body>
