@@ -35,6 +35,27 @@ def sched_path():
     return os.path.join(ARCH, "schedule", "deutsch.json")
 
 
+def sched_backup(sched):
+    try:
+        hdir = os.path.join(ARCH, "schedule", "history")
+        os.makedirs(hdir, exist_ok=True)
+        ts = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d-%H%M")
+        with open(os.path.join(hdir, f"deutsch-{ts}.json"), "w", encoding="utf-8") as f:
+            json.dump(sched, f, ensure_ascii=False, indent=1)
+        olds = sorted(os.listdir(hdir))
+        for o in olds[:-10]:
+            os.remove(os.path.join(hdir, o))
+    except OSError:
+        pass
+
+
+def write_sched(sched):
+    tmp = sched_path() + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(sched, f, ensure_ascii=False, indent=1)
+    os.replace(tmp, sched_path())
+
+
 def sender_list():
     try:
         with open(sched_path(), encoding="utf-8") as f:
@@ -70,10 +91,24 @@ def set_sender_blocked(sender, blocked):
             hit = True
     if not hit:
         return False
-    tmp = sched_path() + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(sched, f, ensure_ascii=False, indent=1)
-    os.replace(tmp, sched_path())
+    sched_backup(sched)
+    write_sched(sched)
+    return True
+
+
+def delete_sender(sender):
+    try:
+        with open(sched_path(), encoding="utf-8") as f:
+            sched = json.load(f)
+    except OSError:
+        return False
+    entries = sched.get("entries", [])
+    rest = [e for e in entries if e.get("sender") != sender]
+    if len(rest) == len(entries):
+        return False
+    sched["entries"] = rest
+    sched_backup(sched)
+    write_sched(sched)
     return True
 
 
@@ -207,6 +242,9 @@ class Handler(BaseHTTPRequestHandler):
             except (ValueError, OSError):
                 return self.send_error(400)
             if "sender" not in d or "gesperrt" not in d:
+                if d.get("delete") is True and "sender" in d:
+                    ok = delete_sender(d["sender"])
+                    return self.send_json({"ok": ok}) if ok else self.send_error(404)
                 return self.send_error(400)
             ok = set_sender_blocked(d["sender"], bool(d["gesperrt"]))
             if not ok:

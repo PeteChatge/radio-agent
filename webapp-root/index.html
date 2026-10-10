@@ -99,8 +99,12 @@ async function load(){
    return `<div class="job">⏰ <span><b>${j.sender}</b> · ${Math.round(j.freqHz/1000)} kHz ${j.mode} (${j.sprache})<br><span class="meta">${fmtDT(j.at)}</span></span><span class="cd">-${mins} min</span></div>`;}).join(""):'<span class="meta">keine Jobs geplant</span>';
   $("senders").innerHTML=senders.length?senders.map(s=>{
    const st=s.gesperrt?"⛔":(s.aktiv?"✅":"⏸️");
-   return `<div class="job"><button data-s="${s.sender}" style="font-size:16px;background:none;border:none;cursor:pointer">${st}</button><span><b>${s.sender}</b> · ${s.freqHz?Math.round(s.freqHz/1000)+" kHz":""} ${s.mode||""} (${s.sprache||"?"})</span></div>`;}).join(""):'<span class="meta">–</span>';
+   return `<div class="job"><button data-s="${s.sender}" style="font-size:16px;background:none;border:none;cursor:pointer">${st}</button><span><b>${s.sender}</b> · ${s.freqHz?Math.round(s.freqHz/1000)+" kHz":""} ${s.mode||""} (${s.sprache||"?"})</span><button data-del="${s.sender}" style="margin-left:auto;font-size:14px;background:none;border:none;cursor:pointer" title="Sender endgültig löschen">🗑️</button></div>`;}).join(""):'<span class="meta">–</span>';
   document.querySelectorAll("#senders button").forEach(b=>b.onclick=async()=>{
+   if(b.dataset.del){
+    if(!confirm(b.dataset.del+" wirklich aus dem Plan löschen? (Backup wird angelegt)"))return;
+    await fetch("api/sender",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sender:b.dataset.del,delete:true})});
+    load();return;}
    const cur=b.textContent==="⛔";
    await fetch("api/sender",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sender:b.dataset.s,gesperrt:!cur})});
    load();});
