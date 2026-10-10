@@ -71,7 +71,7 @@ def in_window(e, now):
 def desired_jobs(entries, now):
     """Aktive Audio-Jobs nach Konflikt-Logik: pro Stick ein Profil (Top-Prio)."""
     cand = [e for e in entries
-            if e.get("aktiv") is not False and e.get("mode") in AUDIO_MODES
+            if not e.get("gesperrt") and e.get("aktiv") is not False and e.get("mode") in AUDIO_MODES
             and e.get("startUTC") and e.get("endeUTC") and in_window(e, now)
             and e.get("profil")]
     by_sdr = {}

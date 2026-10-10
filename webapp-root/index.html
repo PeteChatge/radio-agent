@@ -61,6 +61,9 @@ li .t{margin-left:auto;font-size:11px;color:var(--dim);white-space:nowrap}
 <ul id="files"></ul></div>
 
 <div class="panel"><h2>Cron – nächste Jobs</h2><div id="jobs"><span class="meta">lädt …</span></div></div>
+
+<div class="panel"><h2>Sender sperren</h2><div id="senders"><span class="meta">lädt …</span></div>
+<div class="meta">⛔ = aus der Scanliste (keine Aufnahme).</div></div>
 <div id="faxview" onclick="this.style.display='none'"><img id="faximg" alt="Fax"></div>
 
 <script>
@@ -82,7 +85,7 @@ function paintDaemon(running){
 $("bDaemon").onclick=async()=>{const r=await fetch("api/daemon").then(r=>r.json()).catch(()=>null);daemon(!(r&&r.running));};
 async function load(){
  try{
-  const [now,files,jobs,daemon]=await Promise.all([fetch("api/now").then(r=>r.json()),fetch("api/files").then(r=>r.json()),fetch("api/jobs").then(r=>r.json()),fetch("api/daemon").then(r=>r.json()).catch(()=>({running:false}))]);
+  const [now,files,jobs,daemon,senders]=await Promise.all([fetch("api/now").then(r=>r.json()),fetch("api/files").then(r=>r.json()),fetch("api/jobs").then(r=>r.json()),fetch("api/daemon").then(r=>r.json()).catch(()=>({running:false})),fetch("api/sender").then(r=>r.json()).catch(()=>[])]);
   paintDaemon(daemon.running);
   $("err").style.display="none";
   $("radioName").textContent=(now.radio&&now.radio.name||"?")+" · "+(now.radio&&now.radio.location||"");
@@ -94,6 +97,13 @@ async function load(){
   FILES=files;renderFiles();
   $("jobs").innerHTML=jobs.length?jobs.map(j=>{const mins=Math.max(0,Math.round((new Date(j.at)-Date.now())/60000));
    return `<div class="job">⏰ <span><b>${j.sender}</b> · ${Math.round(j.freqHz/1000)} kHz ${j.mode} (${j.sprache})<br><span class="meta">${fmtDT(j.at)}</span></span><span class="cd">-${mins} min</span></div>`;}).join(""):'<span class="meta">keine Jobs geplant</span>';
+  $("senders").innerHTML=senders.length?senders.map(s=>{
+   const st=s.gesperrt?"⛔":(s.aktiv?"✅":"⏸️");
+   return `<div class="job"><button data-s="${s.sender}" style="font-size:16px;background:none;border:none;cursor:pointer">${st}</button><span><b>${s.sender}</b> · ${s.freqHz?Math.round(s.freqHz/1000)+" kHz":""} ${s.mode||""} (${s.sprache||"?"})</span></div>`;}).join(""):'<span class="meta">–</span>';
+  document.querySelectorAll("#senders button").forEach(b=>b.onclick=async()=>{
+   const cur=b.textContent==="⛔";
+   await fetch("api/sender",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sender:b.dataset.s,gesperrt:!cur})});
+   load();});
  }catch(e){$("err").style.display="block";}
 }
 function renderFiles(){$("files").innerHTML=FILES.length?FILES.map((f,i)=>{

@@ -40,7 +40,8 @@
     5,
     6,
     7
-   ]
+   ],
+   "gesperrt": true
   },
   {
    "bemerkung": "Wiederholung",
@@ -61,7 +62,8 @@
     5,
     6,
     7
-   ]
+   ],
+   "gesperrt": true
   },
   {
    "bemerkung": "250 kW Woofferton, stark in Dresden",
@@ -221,7 +223,7 @@
    ]
   },
   {
-   "bemerkung": "Inlands-MW, abends am besten – flexibles Fenster",
+   "bemerkung": "Inlands-MW, nur Ungarisch - abends, flexibles Fenster",
    "endeUTC": "23:00",
    "freqHz": 541000,
    "mode": "am",
@@ -229,7 +231,7 @@
    "profil": "sdrplay|mw",
    "quelle": "Backup-Bookmarks (Magyar Radio)",
    "sender": "Magyar Radio MW",
-   "sprache": "hu/de-mixed",
+   "sprache": "hu",
    "startUTC": "19:00",
    "tage": [
     1,

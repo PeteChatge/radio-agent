@@ -31,6 +31,52 @@ def daemon_running():
         return False
 
 
+def sched_path():
+    return os.path.join(ARCH, "schedule", "deutsch.json")
+
+
+def sender_list():
+    try:
+        with open(sched_path(), encoding="utf-8") as f:
+            entries = json.load(f).get("entries", [])
+    except OSError:
+        return []
+    seen = {}
+    for e in entries:
+        s = e.get("sender") or "?"
+        if s not in seen:
+            seen[s] = {"sender": s, "freqHz": e.get("freqHz"), "mode": e.get("mode"),
+                       "sprache": e.get("sprache"), "gesperrt": False, "aktiv": False}
+        if e.get("gesperrt"):
+            seen[s]["gesperrt"] = True
+        if e.get("aktiv") is not False:
+            seen[s]["aktiv"] = True
+    return sorted(seen.values(), key=lambda x: x["sender"])
+
+
+def set_sender_blocked(sender, blocked):
+    try:
+        with open(sched_path(), encoding="utf-8") as f:
+            sched = json.load(f)
+    except OSError:
+        return False
+    hit = False
+    for e in sched.get("entries", []):
+        if e.get("sender") == sender:
+            if blocked:
+                e["gesperrt"] = True
+            else:
+                e.pop("gesperrt", None)
+            hit = True
+    if not hit:
+        return False
+    tmp = sched_path() + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(sched, f, ensure_ascii=False, indent=1)
+    os.replace(tmp, sched_path())
+    return True
+
+
 def scan(kind):
     out = []
     base = os.path.join(ARCH, {"audio": "audio", "fax": "fax"}.get(kind, "quarantaene"))
@@ -142,6 +188,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(next_jobs())
         if self.path == "/api/daemon":
             return self.send_json({"running": daemon_running()})
+        if self.path == "/api/sender":
+            return self.send_json(sender_list())
         if self.path.startswith(("/audio/", "/fax/", "/quarantaene/")):
             kind, rest = self.path[1:].split("/", 1)
             base = os.path.join(ARCH, {"audio": "audio", "fax": "fax"}.get(kind, "quarantaene"))
@@ -152,6 +200,18 @@ class Handler(BaseHTTPRequestHandler):
         return self.send_error(404)
 
     def do_POST(self):
+        if self.path == "/api/sender":
+            try:
+                n = int(self.headers.get("Content-Length", 0))
+                d = json.loads(self.rfile.read(n) or b"{}")
+            except (ValueError, OSError):
+                return self.send_error(400)
+            if "sender" not in d or "gesperrt" not in d:
+                return self.send_error(400)
+            ok = set_sender_blocked(d["sender"], bool(d["gesperrt"]))
+            if not ok:
+                return self.send_error(404)
+            return self.send_json({"ok": True})
         if self.path == "/api/daemon":
             try:
                 n = int(self.headers.get("Content-Length", 0))
