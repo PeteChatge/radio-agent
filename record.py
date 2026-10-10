@@ -53,6 +53,12 @@ def profile_cfg(profile):
         "sdrplay|31m": (9650000, 500000), "sdrplay|25m": (11850000, 500000),
         "sdrplay|22m": (13720000, 250000), "sdrplay|ism433": (433000000, 2000000),
         "sdrplay|75m": (3975000, 250000), "sdrplay|mw": (800000, 1000000),
+        "sdrplay|lw": (200000, 250000),
+        "sdrplay|scan2": (2500000, 2000000), "sdrplay|scan3": (4900000, 2000000),
+        "sdrplay|scan4": (6900000, 2000000), "sdrplay|scan5": (8900000, 2000000),
+        "sdrplay|scan6": (11500000, 2000000), "sdrplay|scan7": (13500000, 2000000),
+        "sdrplay|scan8": (15900000, 2000000), "sdrplay|scan9": (17900000, 2000000),
+        "sdrplay|scan10": (19400000, 2000000),
         "sdrplay|adsb1090": (1090000000, 4000000),
         "sdrplay|fax80": (3900000, 1000000), "sdrplay|fax49": (7900000, 1000000),
     }
