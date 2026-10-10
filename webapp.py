@@ -33,7 +33,7 @@ def daemon_running():
 
 def scan(kind):
     out = []
-    base = os.path.join(ARCH, "audio" if kind == "audio" else "fax")
+    base = os.path.join(ARCH, {"audio": "audio", "fax": "fax"}.get(kind, "quarantaene"))
     if not os.path.isdir(base):
         return out
     for sender in sorted(os.listdir(base)):
@@ -135,14 +135,14 @@ class Handler(BaseHTTPRequestHandler):
                 active = None
             return self.send_json({"active": active, "radio": radio_state()})
         if self.path == "/api/files":
-            return self.send_json(scan("audio") + scan("fax"))
+            return self.send_json(scan("audio") + scan("fax") + scan("quarantaene"))
         if self.path == "/api/jobs":
             return self.send_json(next_jobs())
         if self.path == "/api/daemon":
             return self.send_json({"running": daemon_running()})
-        if self.path.startswith("/audio/") or self.path.startswith("/fax/"):
+        if self.path.startswith(("/audio/", "/fax/", "/quarantaene/")):
             kind, rest = self.path[1:].split("/", 1)
-            base = os.path.join(ARCH, "audio" if kind == "audio" else "fax")
+            base = os.path.join(ARCH, {"audio": "audio", "fax": "fax"}.get(kind, "quarantaene"))
             p = os.path.realpath(os.path.join(base, rest))
             if not p.startswith(os.path.realpath(base) + os.sep):
                 return self.send_error(403)

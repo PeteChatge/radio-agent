@@ -69,7 +69,7 @@ const fmt=s=>{s=Math.max(0,Math.floor(s));return String(Math.floor(s/60)).padSta
 const fmtDT=iso=>{const d=new Date(iso);return d.toLocaleString("de-DE",{weekday:"short",hour:"2-digit",minute:"2-digit"});};
 let FILES=[],idx=-1,repeat=false;
 const au=$("au");
-function icon(f){return f.kind==="fax"?"📠":"🎵";}
+function icon(f){return f.kind==="fax"?"📠":(f.kind==="quarantaene"?"⚠️":"🎵");}
 async function daemon(on){
  const r=await fetch("api/daemon",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:on?"start":"stop"})}).then(r=>r.json()).catch(()=>null);
  paintDaemon(r&&r.running);
