@@ -1,13 +1,13 @@
 """Radio-Agent Recorder-Daemon (Ticket 05): 24/7, Schleife alle 30 s.
 
-- Sprache (am/usb/...) aus /archive/schedule/deutsch.json: hoechste Prio gewinnt,
-  10-min-Chunks via record.py, now.json fuer WebApp Kasten 1.
-- Qualitaets-Gate: Chunk mit mean_volume unter SCHWELLE_DB wird automatisch
-  geloescht (Rauschen/Leerlauf), geloggt.
-- Fax: OWRX Background-Decoder parkt per Scheduler (fax49 Tag/fax80 Nacht),
-  Bilder aus Container-/tmp/openwebrx -> /archive/fax/inbox/.
-- Retention: Dateien aelter 60 Tage loeschen (1x/Tag).
-Stop per SIGTERM oder systemctl stop (Aus-Schalter in WebApp).
+- Sprache (am/usb/...) aus /archive/schedule/deutsch.json.
+- Parallel: mehrere Jobs im SELBEN (SDR,Profil) laufen gleichzeitig
+  (eigener DSP pro Client, eigener Offset). Konflikt nur ueber Profile
+  hinweg am selben Stick -> hoechste Prio gewinnt (Gleichstand: Seed-Reihenfolge).
+- 10-min-Chunks via record.py (Kappung am Sendungsende), now.json, Sidecars.
+- Qualitaets-Gate: Stille/LRA/S-Meter -> Quarantaene (Review statt Loeschen).
+- Fax: OWRX Background-Decoder (Scheduler fax49/fax80), Bilder -> /archive/fax/inbox/.
+- Retention 60 Tage. Stopp per SIGTERM / systemctl (WebApp-Schalter).
 """
 import datetime as dt
 import json
@@ -23,29 +23,16 @@ NOW = os.path.join(ARCH, "now.json")
 CHUNK = 600
 TICK = 30
 RETENTION_DAYS = 60
-def loudness_range(path):
-    """Loudness Range (LRA) via ebur128, None bei Fehler. Sprache/Musik: hoch,
-    Dauerrauschen/Dauertraeger: niedrig."""
-    import re
-    try:
-        r = subprocess.run(["ffmpeg", "-v", "info", "-i", path, "-af", "ebur128=peak=true",
-                            "-f", "null", "-"], capture_output=True, text=True, timeout=180)
-        m = re.search(r"LRA:\s*(-?[0-9.]+)", r.stderr)
-        return float(m.group(1)) if m else None
-    except (OSError, ValueError, subprocess.SubprocessError):
-        return None
-
-
-SCHWELLE_DB = -35.0     # darunter = Stille -> Quarantaene
-SCHWELLE_LRA = 4.0      # darunter = flach wie Rauschen -> Quarantaene
-SCHWELLE_SMETER = 1e-7  # darunter = kein Signal an der Antenne -> Quarantaene
+SCHWELLE_DB = -35.0
+SCHWELLE_LRA = 4.0
+SCHWELLE_SMETER = 1e-7
 AUDIO_MODES = ("am", "usb", "lsb", "nfm", "wfm")
 PY = os.path.join(BASE, "venv", "bin", "python")
 REC = os.path.join(BASE, "record.py")
 FAX_TMP = "/tmp/openwebrx"
 
 stop = False
-current_proc = None
+ongoing = {}  # jobkey -> {proc, job, out}
 
 
 def log(*a):
@@ -55,9 +42,9 @@ def log(*a):
 def on_term(signum, frame):
     global stop
     stop = True
-    if current_proc is not None:
+    for e in ongoing.values():
         try:
-            current_proc.terminate()
+            e["proc"].terminate()
         except OSError:
             pass
 
@@ -67,27 +54,42 @@ def load_sched():
         return json.load(f).get("entries", [])
 
 
-def active_job(entries, now):
+def in_window(e, now):
+    try:
+        sh, sm = (int(x) for x in e["startUTC"].split(":")[:2])
+        eh, em = (int(x) for x in e["endeUTC"].split(":")[:2])
+    except (ValueError, KeyError, AttributeError):
+        return False
     py2seed = {0: 2, 1: 3, 2: 4, 3: 5, 4: 6, 5: 7, 6: 1}
-    best = None
-    for e in entries:
-        if e.get("aktiv") is False:
-            continue
-        if e.get("mode") not in AUDIO_MODES or not e.get("startUTC") or not e.get("endeUTC"):
-            continue
-        try:
-            sh, sm = (int(x) for x in e["startUTC"].split(":")[:2])
-            eh, em = (int(x) for x in e["endeUTC"].split(":")[:2])
-        except ValueError:
-            continue
-        if py2seed[now.weekday()] not in (e.get("tage") or []):
-            continue
-        t = now.time()
-        s, en = dt.time(sh, sm), dt.time(eh, em)
-        inside = s <= t < en if s < en else (s <= t or t < en)
-        if inside and (best is None or (e.get("prio", 0) > best.get("prio", 0))):
-            best = e
-    return best
+    if py2seed[now.weekday()] not in (e.get("tage") or []):
+        return False
+    t = now.time()
+    s, en = dt.time(sh, sm), dt.time(eh, em)
+    return (s <= t < en) if s < en else (s <= t or t < en)
+
+
+def desired_jobs(entries, now):
+    """Aktive Audio-Jobs nach Konflikt-Logik: pro Stick ein Profil (Top-Prio)."""
+    cand = [e for e in entries
+            if e.get("aktiv") is not False and e.get("mode") in AUDIO_MODES
+            and e.get("startUTC") and e.get("endeUTC") and in_window(e, now)
+            and e.get("profil")]
+    by_sdr = {}
+    for e in cand:
+        sdr = e["profil"].split("|")[0]
+        by_sdr.setdefault(sdr, []).append(e)
+    out = []
+    for sdr, jobs in by_sdr.items():
+        by_prof = {}
+        for e in jobs:
+            by_prof.setdefault(e["profil"], []).append(e)
+        top = max(by_prof.values(), key=lambda g: max(x.get("prio", 0) for x in g))
+        out.extend(top)
+    return out
+
+
+def jobkey(job):
+    return f"{job.get('sender')}|{job.get('freqHz')}"
 
 
 def slug(name):
@@ -100,24 +102,37 @@ def slug(name):
     return "".join(keep).strip("-") or "sender"
 
 
-def write_now(job):
-    if job is None:
+def job_end(job, now):
+    try:
+        eh, em = (int(x) for x in job["endeUTC"].split(":")[:2])
+    except (ValueError, KeyError):
+        return None
+    end = now.replace(hour=eh, minute=em, second=0, microsecond=0)
+    if end <= now:
+        end += dt.timedelta(days=1)
+    return end
+
+
+def write_now(jobs):
+    if not jobs:
         try:
             os.remove(NOW)
         except OSError:
             pass
         return
+    top = max(jobs, key=lambda j: j.get("prio", 0))
     tmp = NOW + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
-        json.dump({"sender": job.get("sender"), "freqHz": job.get("freqHz"),
-                   "mode": job.get("mode"), "sprache": job.get("sprache"),
-                   "since": dt.datetime.now(dt.timezone.utc).strftime("%H:%M"),
-                   "profil": job.get("profil")}, f, ensure_ascii=False)
+        json.dump({"active": {"sender": top.get("sender"), "freqHz": top.get("freqHz"),
+                              "mode": top.get("mode"), "sprache": top.get("sprache"),
+                              "since": dt.datetime.now(dt.timezone.utc).strftime("%H:%M"),
+                              "profil": top.get("profil")},
+                   "alle": [{"sender": j.get("sender"), "freqHz": j.get("freqHz")} for j in jobs]},
+                  f, ensure_ascii=False)
     os.replace(tmp, NOW)
 
 
 def mean_db(path):
-    """Mittlerer Pegel via ffmpeg volumedetect, None bei Fehler."""
     try:
         r = subprocess.run(["ffmpeg", "-v", "info", "-i", path, "-af", "volumedetect",
                             "-f", "null", "-"], capture_output=True, text=True, timeout=120)
@@ -129,21 +144,18 @@ def mean_db(path):
     return None
 
 
-def job_end(job, now):
-    """Ende-Datetime der laufenden Aussendung (UTC)."""
-    py2seed = {0: 2, 1: 3, 2: 4, 3: 5, 4: 6, 5: 7, 6: 1}
+def loudness_range(path):
+    import re
     try:
-        eh, em = (int(x) for x in job["endeUTC"].split(":")[:2])
-    except (ValueError, KeyError):
+        r = subprocess.run(["ffmpeg", "-v", "info", "-i", path, "-af", "ebur128=peak=true",
+                            "-f", "null", "-"], capture_output=True, text=True, timeout=180)
+        m = re.search(r"LRA:\s*(-?[0-9.]+)", r.stderr)
+        return float(m.group(1)) if m else None
+    except (OSError, ValueError, subprocess.SubprocessError):
         return None
-    end = now.replace(hour=eh, minute=em, second=0, microsecond=0)
-    if end <= now:
-        end += dt.timedelta(days=1)
-    return end
 
 
-def record_chunk(job):
-    global current_proc
+def start_chunk(job):
     now = dt.datetime.now(dt.timezone.utc)
     end = job_end(job, now)
     secs = CHUNK
@@ -154,31 +166,18 @@ def record_chunk(job):
     os.makedirs(sdir, exist_ok=True)
     base = f"{ts}_{job['freqHz'] // 1000}kHz_{job['mode']}_{slug(job.get('sender'))}"
     out = os.path.join(sdir, base + ".mp3")
-    wav = out + ".wav"
     log("REC-START", base)
-    write_now(job)
     with open(os.path.join(BASE, "last-rec.log"), "wb") as lf:
-        current_proc = subprocess.Popen(
+        proc = subprocess.Popen(
             [PY, REC, job["profil"], str(job["freqHz"]), job["mode"], str(secs), out],
             stdout=lf, stderr=subprocess.STDOUT)
-    t0 = time.monotonic()
-    while current_proc.poll() is None and not stop:
-        time.sleep(2)
-    if stop and current_proc.poll() is None:
-        current_proc.terminate()
-        try:
-            current_proc.wait(timeout=15)
-        except subprocess.SubprocessError:
-            current_proc.kill()
-    rc = current_proc.poll()
-    current_proc = None
-    if stop:
-        write_now(None)
-        return
-    if rc != 0 or not os.path.exists(out):
-        log("REC-FEHLER rc=", rc, base, "(siehe last-rec.log, 60s Pause)")
-        time.sleep(60)
-        return
+    ongoing[jobkey(job)] = {"proc": proc, "job": job, "out": out, "base": base}
+
+
+def finish_chunk(key, entry):
+    """Abgeschlossener Chunk: Gate -> Archiv oder Quarantaene."""
+    job, out, base = entry["job"], entry["out"], entry["base"]
+    wav = out + ".wav"
     pegel = mean_db(wav if os.path.exists(wav) else out)
     lra = loudness_range(wav if os.path.exists(wav) else out)
     try:
@@ -200,7 +199,6 @@ def record_chunk(job):
     elif smax < SCHWELLE_SMETER:
         grund = f"kein Signal S={smax:.1e}"
     if grund is not None:
-        # Quarantaene statt Loeschen: Stichprobe bleibt hoerbar
         qdir = os.path.join(ARCH, "quarantaene", slug(job.get("sender")))
         os.makedirs(qdir, exist_ok=True)
         for p in (out, out + ".json"):
@@ -213,15 +211,14 @@ def record_chunk(job):
     with open(out + ".json", "w", encoding="utf-8") as f:
         json.dump({"sender": job.get("sender"), "freqHz": job.get("freqHz"),
                    "mode": job.get("mode"), "sprache": job.get("sprache"),
-                   "profil": job.get("profil"), "chunk_s": secs,
-                   "mean_db": pegel, "lra": lra, "smeter_max": smax,
+                   "profil": job.get("profil"), "mean_db": pegel, "lra": lra,
+                   "smeter_max": smax,
                    "recorded_utc": dt.datetime.now(dt.timezone.utc).isoformat()},
                   f, ensure_ascii=False, indent=1)
     log(f"REC-OK pegel={pegel if pegel is None else round(pegel, 1)}dB", base)
 
 
 def collect_fax(seen):
-    """Neue Decoder-Bilder aus Container-tmp -> /archive/fax/inbox/."""
     try:
         r = subprocess.run(["docker", "exec", "owrx-mbe", "ls", "-1", FAX_TMP],
                            capture_output=True, timeout=30)
@@ -229,7 +226,6 @@ def collect_fax(seen):
         return
     if r.returncode != 0:
         return
-    # Dateinamen koennen Latin-1-Bytes enthalten (° etc.) -> surrogateescape
     names = r.stdout.decode("utf-8", "surrogateescape").split()
     dest = os.path.join(ARCH, "fax", "inbox")
     os.makedirs(dest, exist_ok=True)
@@ -270,7 +266,7 @@ def retention():
 def main():
     signal.signal(signal.SIGTERM, on_term)
     signal.signal(signal.SIGINT, on_term)
-    log(f"DAEMON-START chunk={CHUNK}s schwelle={SCHWELLE_DB}dB retention={RETENTION_DAYS}d")
+    log("DAEMON-START parallel-chunks")
     try:
         entries = load_sched()
     except OSError as e:
@@ -291,13 +287,32 @@ def main():
             entries = load_sched()
         except OSError:
             pass
-        job = active_job(entries, now)
-        if job is None:
-            write_now(None)
-            time.sleep(TICK)
-            continue
-        record_chunk(job)
-    write_now(None)
+        want = {jobkey(j): j for j in desired_jobs(entries, now)}
+        for key in [k for k in ongoing if k not in want]:
+            try:
+                ongoing[key]["proc"].terminate()
+            except OSError:
+                pass
+        for key, entry in list(ongoing.items()):
+            rc = entry["proc"].poll()
+            if rc is None:
+                continue
+            del ongoing[key]
+            if stop:
+                continue
+            if rc != 0 or not os.path.exists(entry["out"]):
+                log("REC-FEHLER rc=", rc, entry["base"], "(60s Pause)")
+                time.sleep(60)
+                continue
+            finish_chunk(key, entry)
+        if not stop:
+            for key, job in want.items():
+                if key not in ongoing:
+                    start_chunk(job)
+        write_now([e["job"] for e in ongoing.values()] or
+                  [want[k] for k in want] or [])
+        time.sleep(TICK)
+    write_now([])
     log("DAEMON-STOPP")
 
 
