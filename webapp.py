@@ -116,6 +116,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/":
             return self.send_file(os.path.join(ROOT, "index.html"))
+        if self.path == "/docs":
+            return self.send_file(os.path.join(ROOT, "docs/radio-agent-chat.md"))
         if self.path == "/api/now":
             try:
                 with open(os.path.join(ARCH, "now.json"), encoding="utf-8") as f:
