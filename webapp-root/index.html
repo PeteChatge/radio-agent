@@ -36,6 +36,11 @@ li .t{margin-left:auto;font-size:11px;color:var(--dim);white-space:nowrap}
 #faxview{position:fixed;inset:0;background:rgba(0,0,0,.92);display:none;align-items:center;justify-content:center;z-index:20;padding:12px}
 #faxview img{max-width:100%;max-height:92vh;background:#fff;border-radius:8px}
 #err{display:none;background:#3a1020;border:1px solid var(--rec);border-radius:12px;padding:10px;margin:10px 0;font-size:13px}
+.knob-container{display:flex;align-items:center;gap:12px;margin-top:8px;background:rgba(0,0,0,0.2);padding:8px;border-radius:8px}
+.knob-container input{flex:1;cursor:pointer}
+.knob-val{font-family:monospace;color:var(--neon);min-width:20px;text-align:right}
+.folder-btn{background:var(--card);border:1px solid var(--line);color:var(--txt);padding:6px 12px;border-radius:8px;cursor:pointer;font-size:12px;margin-bottom:8px;display:block;width:100%;text-align:center}
+.folder-btn:hover{border-color:var(--neon)}
 </style>
 </head>
 <body>
@@ -44,9 +49,16 @@ li .t{margin-left:auto;font-size:11px;color:var(--dim);white-space:nowrap}
 
 <div class="panel"><h2><span id="statedot" class="idle-dot"></span><span id="statetxt">Bereit</span></h2>
 <div class="big" id="nowSender">–</div>
-<div class="meta" id="nowMeta"></div></div>
+<div class="meta" id="nowMeta"></div>
+<div class="knob-container">
+  <span class="meta" style="font-size:11px">Rauscherkennung (NR):</span>
+  <input type="range" id="nrKnob" min="0" max="20" step="1" oninput="updateNR(this.value)">
+  <span id="nrVal" class="knob-val">5</span>
+</div>
+</div>
 
 <div class="panel"><h2>Dateiliste</h2>
+<button class="folder-btn" onclick="openFolder()">📂 Archiv-Ordner öffnen</button>
 <div class="cassette" id="cass">
 <div class="reels"><div class="reel"></div><div class="reel"></div></div>
 <div class="track" id="track">lädt …</div>
@@ -70,7 +82,12 @@ const au=$("au");
 function icon(f){return f.kind==="fax"?"📠":"🎵";}
 async function load(){
  try{
-  const [now,files,jobs]=await Promise.all([fetch("api/now").then(r=>r.json()),fetch("api/files").then(r=>r.json()),fetch("api/jobs").then(r=>r.json())]);
+  const [now,files,jobs,settings]=await Promise.all([
+    fetch("api/now").then(r=>r.json()),
+    fetch("api/files").then(r=>r.json()),
+    fetch("api/jobs").then(r=>r.json()),
+    fetch("api/settings").then(r=>r.json())
+  ]);
   $("err").style.display="none";
   $("radioName").textContent=(now.radio&&now.radio.name||"?")+" · "+(now.radio&&now.radio.location||"");
   if(now.active){$("statedot").className="rec-dot";$("statetxt").textContent="REC läuft";
@@ -81,12 +98,33 @@ async function load(){
   FILES=files;renderFiles();
   $("jobs").innerHTML=jobs.length?jobs.map(j=>{const mins=Math.max(0,Math.round((new Date(j.at)-Date.now())/60000));
    return `<div class="job">⏰ <span><b>${j.sender}</b> · ${Math.round(j.freqHz/1000)} kHz ${j.mode} (${j.sprache})<br><span class="meta">${fmtDT(j.at)}</span></span><span class="cd">-${mins} min</span></div>`;}).join(""):'<span class="meta">keine Jobs geplant</span>';
+  if(settings && settings.nr_threshold !== undefined){
+    $("nrKnob").value=settings.nr_threshold;
+    $("nrVal").textContent=settings.nr_threshold;
+  }
  }catch(e){$("err").style.display="block";}
 }
+async function updateNR(val){
+  $("nrVal").textContent=val;
+  try {
+    await fetch("api/settings", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({nr_threshold: parseInt(val)})
+    });
+  } catch(e) { console.error("NR update failed", e); }
+}
+async function openFolder(){
+  try {
+    const r = await fetch("api/open-folder");
+    const res = await r.json();
+    if(res.status !== "ok") alert("Fehler beim Öffnen: " + res.message);
+  } catch(e) { alert("Fehler: " + e); }
+}
 function renderFiles(){$("files").innerHTML=FILES.length?FILES.map((f,i)=>{
- const mb=(f.size/1048576).toFixed(1);
- return `<li data-i="${i}" class="${i===idx?"sel":""}">${icon(f)}<span>${f.sender} · ${f.name}</span><span class="t">${mb} MB</span></li>`;}).join(""):'<li><span class="meta">Archiv leer – erste Aufnahme steht aus</span></li>';
- document.querySelectorAll("#files li[data-i]").forEach(li=>li.onclick=()=>select(+li.dataset.i,true));}
+  const mb=(f.size/1048576).toFixed(1);
+  return `<li data-i="${i}" class="${i===idx?"sel":""}">${icon(f)}<span>${f.sender} · ${f.name}</span><span class="t">${mb} MB</span></li>`;}).join(""):'<li><span class="meta">Archiv leer – erste Aufnahme steht aus</span></li>';
+  document.querySelectorAll("#files li[data-i]").forEach(li=>li.onclick=()=>select(+li.dataset.i,true));}
 function select(i,auto){idx=i;const f=FILES[i];
  if(f.kind==="fax"){$("faximg").src=f.url;$("faxview").style.display="flex";$("track").textContent="📠 "+f.name;return;}
  au.src=f.url;$("track").textContent="🎵 "+f.sender+" · "+f.name;

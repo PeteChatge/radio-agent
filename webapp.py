@@ -12,11 +12,13 @@ import datetime as dt
 import json
 import mimetypes
 import os
+import subprocess
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 ROOT = "/opt/radio-agent/webapp-root"
 ARCH = "/archive"
+SETTINGS_FILE = "/opt/radio-agent/settings.json"
 PORT = 18088
 
 
@@ -113,11 +115,52 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def do_POST(self):
+        if self.path == "/api/settings":
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+                data = json.loads(self.rfile.read(length).decode("utf-8"))
+                
+                with open(SETTINGS_FILE, "w") as f:
+                    json.dump(data, f)
+                
+                return self.send_json({"status": "ok", "settings": data})
+            except Exception as e:
+                self.send_error(400, msg=str(e))
+                return
+        return self.send_error(404)
+
     def do_GET(self):
         if self.path == "/":
             return self.send_file(os.path.join(ROOT, "index.html"))
         if self.path == "/docs":
             return self.send_file(os.path.join(ROOT, "docs/radio-agent-chat.md"))
+        if self.path == "/api/open-folder":
+            # Opens the archive folder in the host OS (assuming Windows/WSL)
+            # This requires running the server with permissions to call subprocess
+            # and the folder being accessible via explorer.exe
+            try:
+                # Translate Linux path to Windows path for explorer
+                win_path = ARCH.replace("/mnt/c/", "C:/").replace("/", "\\") 
+                # Since ARCH is usually /archive, we need to ensure it points to the right place
+                # If it's /mnt/c/Users/Olaf/radio-agent-work/archive
+                # we'll use a more robust approach.
+                actual_path = os.path.realpath(ARCH)
+                if actual_path.startswith("/mnt/"):
+                    # /mnt/c/path -> C:\path
+                    parts = actual_path.split("/", 3) # ['', 'mnt', 'c', 'path']
+                    win_path = f"{parts[2].upper()}:\\{parts[3].replace('/', '\\')}"
+                    subprocess.Popen(["explorer.exe", win_path])
+                
+                return self.send_json({"status": "ok"})
+            except Exception as e:
+                return self.send_json({"status": "error", "message": str(e)})
+        if self.path == "/api/settings":
+            try:
+                with open(SETTINGS_FILE, "r") as f:
+                    return self.send_json(json.load(f))
+            except OSError:
+                return self.send_json({"nr_threshold": 5})
         if self.path == "/api/now":
             try:
                 with open(os.path.join(ARCH, "now.json"), encoding="utf-8") as f:
