@@ -6,6 +6,7 @@ GET /api/files   -> [{kind, sender, name, size, mtime, url}] (audio + fax)
 GET /api/jobs    -> naechste Aussendungen aus /archive/schedule/deutsch.json
 GET /audio/...   -> mp3 aus /archive/audio
 GET /fax/...     -> Bild aus /archive/fax
+GET /docs/...    -> Datei aus webapp-root/docs (z.B. Markdown zum Download)
 Nur Stdlib. Start per systemd (radio-webapp.service).
 """
 import datetime as dt
@@ -14,12 +15,17 @@ import mimetypes
 import os
 import subprocess
 import time
+import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 ROOT = "/opt/radio-agent/webapp-root"
 ARCH = "/archive"
 PORT = 18088
+NOISE_REPORT = os.path.join(ARCH, "noise-report.json")
+NOISE_SCRIPT = "/opt/radio-agent/noise.py"
+PY = "/usr/bin/python3"
+_noise_proc = None
 
 
 def daemon_running():
@@ -136,6 +142,38 @@ def scan(kind):
     return out
 
 
+def noise_report():
+    try:
+        with open(NOISE_REPORT, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
+
+
+def noise_scanning():
+    if _noise_proc is not None and _noise_proc.poll() is None:
+        return True
+    return os.path.exists("/tmp/noise-scan.lock")
+
+
+def start_noise_scan():
+    global _noise_proc
+    if noise_scanning():
+        return False
+    logf = open("/tmp/noise-scan.log", "ab")
+    _noise_proc = subprocess.Popen([PY, NOISE_SCRIPT, "scan", ARCH],
+                                   stdout=logf, stderr=subprocess.STDOUT)
+    return True
+
+
+def noise_state():
+    rep = noise_report() or {}
+    return {"scanning": noise_scanning(),
+            "generated_at": rep.get("generated_at"),
+            "noise": rep.get("noise", []),
+            "borderline": rep.get("borderline", [])}
+
+
 def next_jobs(limit=8):
     try:
         with open(os.path.join(ARCH, "schedule", "deutsch.json"), encoding="utf-8") as f:
@@ -198,6 +236,10 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(404)
             return
         mime = mimetypes.guess_type(path)[0] or "application/octet-stream"
+        if path.endswith(".md"):
+            mime = "text/markdown; charset=utf-8"
+        elif mime.startswith("text/") and "charset" not in mime:
+            mime += "; charset=utf-8"
         self.send_response(200)
         self.send_header("Content-Type", mime)
         self.send_header("Content-Length", str(len(body)))
@@ -221,6 +263,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(allf)
         if self.path == "/api/jobs":
             return self.send_json(next_jobs())
+        if self.path == "/api/noise":
+            return self.send_json(noise_state())
         if self.path == "/api/daemon":
             return self.send_json({"running": daemon_running()})
         if self.path == "/api/sender":
@@ -230,6 +274,13 @@ class Handler(BaseHTTPRequestHandler):
             base = os.path.join(ARCH, {"audio": "audio", "fax": "fax"}.get(kind, "quarantaene"))
             p = os.path.realpath(os.path.join(base, rest))
             if not p.startswith(os.path.realpath(base) + os.sep):
+                return self.send_error(403)
+            return self.send_file(p)
+        if self.path.startswith("/docs/"):
+            rest = urllib.parse.unquote(self.path[len("/docs/"):])
+            base = os.path.realpath(os.path.join(ROOT, "docs"))
+            p = os.path.realpath(os.path.join(base, rest))
+            if not p.startswith(base + os.sep):
                 return self.send_error(403)
             return self.send_file(p)
         return self.send_error(404)
@@ -250,6 +301,30 @@ class Handler(BaseHTTPRequestHandler):
             if not ok:
                 return self.send_error(404)
             return self.send_json({"ok": True})
+        if self.path == "/api/noise":
+            try:
+                n = int(self.headers.get("Content-Length", 0))
+                action = json.loads(self.rfile.read(n) or b"{}").get("action")
+            except (ValueError, OSError):
+                return self.send_error(400)
+            if action != "rescan":
+                return self.send_error(400)
+            return self.send_json({"scanning": start_noise_scan()})
+        if self.path == "/api/noise/delete":
+            try:
+                n = int(self.headers.get("Content-Length", 0))
+                paths = json.loads(self.rfile.read(n) or b"{}").get("paths", [])
+            except (ValueError, OSError):
+                return self.send_error(400)
+            if not isinstance(paths, list) or not paths:
+                return self.send_error(400)
+            r = subprocess.run([PY, NOISE_SCRIPT, "delete", "--json", *paths],
+                               capture_output=True, text=True, timeout=180)
+            try:
+                res = json.loads(r.stdout.strip().splitlines()[-1])
+            except (ValueError, IndexError):
+                return self.send_error(500)
+            return self.send_json(res)
         if self.path == "/api/daemon":
             try:
                 n = int(self.headers.get("Content-Length", 0))

@@ -64,6 +64,15 @@ li .t{margin-left:auto;font-size:11px;color:var(--dim);white-space:nowrap}
 
 <div class="panel"><h2>Sender sperren</h2><div id="senders"><span class="meta">lädt …</span></div>
 <div class="meta">⛔ = aus der Scanliste (keine Aufnahme).</div></div>
+<div class="panel"><h2>Rauschen – löschen
+<button id="bNoiseScan" style="float:right;font-size:14px;padding:2px 10px;border-radius:8px;border:1px solid var(--line);background:#16203a;color:var(--txt)" title="Neuen Scan starten">↻ Scan</button></h2>
+<div class="meta" id="noiseInfo">lädt …</div>
+<div id="noiseList"></div>
+<div class="transport">
+<button id="bNoiseAll">☑ alle wählen</button>
+<button id="bNoiseDel" style="border-color:var(--rec);color:var(--rec)">🗑️ Auswahl löschen</button>
+</div>
+<div class="meta">Nur Aufnahmen ohne Sender (reines Rauschen). Löschen ist endgültig.</div></div>
 <div id="faxview" onclick="this.style.display='none'"><img id="faximg" alt="Fax"></div>
 
 <script>
@@ -85,7 +94,8 @@ function paintDaemon(running){
 $("bDaemon").onclick=async()=>{const r=await fetch("api/daemon").then(r=>r.json()).catch(()=>null);daemon(!(r&&r.running));};
 async function load(){
  try{
-  const [now,files,jobs,daemon,senders]=await Promise.all([fetch("api/now").then(r=>r.json()),fetch("api/files").then(r=>r.json()),fetch("api/jobs").then(r=>r.json()),fetch("api/daemon").then(r=>r.json()).catch(()=>({running:false})),fetch("api/sender").then(r=>r.json()).catch(()=>[])]);
+  const [now,files,jobs,daemon,senders,noise]=await Promise.all([fetch("api/now").then(r=>r.json()),fetch("api/files").then(r=>r.json()),fetch("api/jobs").then(r=>r.json()),fetch("api/daemon").then(r=>r.json()).catch(()=>({running:false})),fetch("api/sender").then(r=>r.json()).catch(()=>[]),fetch("api/noise").then(r=>r.json()).catch(()=>({noise:[]}))]);
+  renderNoise(noise);
   paintDaemon(daemon.running);
   $("err").style.display="none";
   $("radioName").textContent=(now.radio&&now.radio.name||"?")+" · "+(now.radio&&now.radio.location||"");
@@ -141,6 +151,21 @@ $("prog").addEventListener("pointerdown",e=>{scrub=true;$("prog").setPointerCapt
 $("prog").addEventListener("pointermove",e=>{if(scrub)seek(e);});
 $("prog").addEventListener("pointerup",()=>scrub=false);
 $("prog").addEventListener("pointercancel",()=>scrub=false);
+function renderNoise(n){
+ const list=n.noise||[];
+ $("noiseInfo").textContent=n.scanning?"Scan läuft …":(list.length+" Rauschdatei(en)"+(n.generated_at?" · "+new Date(n.generated_at).toLocaleString("de-DE"):""));
+ $("noiseList").innerHTML=list.length?`<ul>${list.map(r=>`<li><label style="display:flex;gap:8px;align-items:center;width:100%;cursor:pointer"><input type="checkbox" class="nz" data-p="${r.path}"><span>${r.sender} · ${r.path.split("/").pop()}</span><span class="t">flat ${r.flatness}</span></label></li>`).join("")}</ul>`:'<div class="meta">keine Rauschdateien</div>';
+}
+$("bNoiseAll").onclick=()=>{const cbs=[...document.querySelectorAll(".nz")];const all=cbs.length&&cbs.every(c=>c.checked);cbs.forEach(c=>c.checked=!all);};
+$("bNoiseDel").onclick=async()=>{
+ const paths=[...document.querySelectorAll(".nz:checked")].map(c=>c.dataset.p);
+ if(!paths.length)return alert("Keine Dateien ausgewählt.");
+ if(!confirm(paths.length+" Rauschdatei(en) endgültig löschen?"))return;
+ const r=await fetch("api/noise/delete",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({paths})}).then(r=>r.json()).catch(()=>null);
+ alert(r?"Gelöscht: "+(r.deleted?r.deleted.length:0)+(r.failed&&r.failed.length?" · Fehler: "+r.failed.length:""):"Fehler beim Löschen");
+ load();
+};
+$("bNoiseScan").onclick=async()=>{await fetch("api/noise",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"rescan"})});alert("Scan gestartet – dauert einige Minuten.");load();};
 load();setInterval(load,60000);
 </script>
 </body>

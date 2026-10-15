@@ -16,9 +16,12 @@ import signal
 import subprocess
 import time
 
+import drm_fetch
+
 BASE = "/opt/radio-agent"
 ARCH = "/archive"
-SCHED = os.path.join(ARCH, "schedule", "deutsch.json")
+SCHED_FILES = [os.path.join(ARCH, "schedule", "deutsch.json"),
+               os.path.join(ARCH, "schedule", "drm.json")]
 NOW = os.path.join(ARCH, "now.json")
 CHUNK = 600
 TICK = 30
@@ -26,13 +29,24 @@ RETENTION_DAYS = 60
 SCHWELLE_DB = -35.0
 SCHWELLE_LRA = 4.0
 SCHWELLE_SMETER = 1e-7
-AUDIO_MODES = ("am", "usb", "lsb", "nfm", "wfm")
+AUDIO_MODES = ("am", "usb", "lsb", "nfm", "wfm", "drm")
 PY = os.path.join(BASE, "venv", "bin", "python")
 REC = os.path.join(BASE, "record.py")
+SCAN = os.path.join(BASE, "scan.py")
+SCAN_REC_SECONDS = 60
+SCAN_MAX = 120
+SCAN_COOLDOWN = 1800       # Pause zwischen explizit geplanten Scans
+AUTOSCAN_COOLDOWN = 15     # Pause zwischen Auto-Fallback-Scans
+DRM_TTL = 86400
 FAX_TMP = "/tmp/openwebrx"
+NO_AUDIO_COOLDOWN = 120   # kein Audio (z.B. DRM ohne Lock): pro Job warten
+ERROR_COOLDOWN = 120      # sonstiger Fehler: pro Job warten
 
 stop = False
 ongoing = {}  # jobkey -> {proc, job, out}
+last_finish = {}  # jobkey -> monotonic, fuer Scan-Cooldown
+suppressed = {}  # jobkey -> Fensterende (epoch): Rausch-Job fuer Fenster gesperrt
+retry_after = {}  # jobkey -> epoch: Job erst nach diesem Zeitpunkt neu starten
 
 
 def log(*a):
@@ -50,8 +64,14 @@ def on_term(signum, frame):
 
 
 def load_sched():
-    with open(SCHED, encoding="utf-8") as f:
-        return json.load(f).get("entries", [])
+    entries = []
+    for path in SCHED_FILES:
+        try:
+            with open(path, encoding="utf-8") as f:
+                entries.extend(json.load(f).get("entries", []))
+        except (OSError, ValueError):
+            continue
+    return entries
 
 
 def in_window(e, now):
@@ -68,12 +88,40 @@ def in_window(e, now):
     return (s <= t < en) if s < en else (s <= t or t < en)
 
 
+def window_end_epoch(job, now):
+    end = job_end(job, now)
+    return end.timestamp() if end is not None else time.time() + CHUNK
+
+
+def is_suppressed(job, now):
+    e = suppressed.get(jobkey(job))
+    if e is None:
+        return False
+    if now.timestamp() >= e:
+        suppressed.pop(jobkey(job), None)
+        return False
+    return True
+
+
+def in_window_any(e, now):
+    return bool(e.get("startUTC") and e.get("endeUTC") and in_window(e, now))
+
+
 def desired_jobs(entries, now):
-    """Aktive Audio-Jobs nach Konflikt-Logik: pro Stick ein Profil (Top-Prio)."""
-    cand = [e for e in entries
-            if not e.get("gesperrt") and e.get("aktiv") is not False and e.get("mode") in AUDIO_MODES
-            and e.get("startUTC") and e.get("endeUTC") and in_window(e, now)
-            and e.get("profil")]
+    """Aktive Audio-/Scan-Jobs nach Konflikt-Logik: pro Stick ein Profil (Top-Prio)."""
+    cand = []
+    for e in entries:
+        if e.get("gesperrt") or e.get("aktiv") is False:
+            continue
+        if not in_window_any(e, now):
+            continue
+        if e.get("scan"):
+            e.setdefault("profil", "sdrplay|scan")
+            cand.append(e)
+        elif e.get("mode") in AUDIO_MODES and e.get("profil"):
+            if is_suppressed(e, now):
+                continue
+            cand.append(e)
     by_sdr = {}
     for e in cand:
         sdr = e["profil"].split("|")[0]
@@ -89,7 +137,50 @@ def desired_jobs(entries, now):
 
 
 def jobkey(job):
+    if job.get("scan"):
+        return f"{job.get('sender')}|scan-{job.get('scan')}"
     return f"{job.get('sender')}|{job.get('freqHz')}"
+
+
+def fallback_band(jobs):
+    bands = set()
+    for j in jobs:
+        f = j.get("freqHz") or 0
+        bands.add("mw" if 531000 <= f <= 1602000 else "sw")
+    if bands == {"mw"}:
+        return "mw"
+    if bands == {"sw"}:
+        return "sw"
+    return "all"
+
+
+def compute_want(entries, now):
+    """Geplante Jobs + Auto-Scan-Fallback.
+
+    Liefert guter Audio-Job auf einem Stick -> normaler Job.
+    Liefert KEIN geplanter Job gutes Audio (alle als Rauschen gesperrt) ->
+    Auto-Scan des erwarteten Bandes, bis wieder ein gutes Signal anliegt.
+    """
+    want = {jobkey(j): j for j in desired_jobs(entries, now)}
+    expected = {}
+    for e in entries:
+        if e.get("gesperrt") or e.get("aktiv") is False or e.get("scan"):
+            continue
+        if e.get("mode") not in AUDIO_MODES or not e.get("profil"):
+            continue
+        if not in_window_any(e, now):
+            continue
+        expected.setdefault(e["profil"].split("|")[0], []).append(e)
+    scan_sdrs = {j["profil"].split("|")[0] for j in want.values() if j.get("scan")}
+    for sdr, jobs in expected.items():
+        if sdr in scan_sdrs:
+            continue
+        if any(not is_suppressed(j, now) for j in jobs):
+            continue
+        fj = {"sender": f"AutoScan-{sdr}", "scan": fallback_band(jobs),
+              "mode": "scan", "profil": f"{sdr}|scan", "prio": -1, "fallback": True}
+        want[jobkey(fj)] = fj
+    return want
 
 
 def slug(name):
@@ -157,6 +248,17 @@ def loudness_range(path):
 
 def start_chunk(job):
     now = dt.datetime.now(dt.timezone.utc)
+    if job.get("scan"):
+        band = job["scan"]
+        base = f"scan-{band}"
+        log("AUTOSCAN-START" if job.get("fallback") else "SCAN-START", band)
+        with open(os.path.join(BASE, "last-rec.log"), "wb") as lf:
+            proc = subprocess.Popen(
+                [PY, SCAN, band, "--record-seconds", str(int(SCAN_REC_SECONDS)),
+                 "--max", str(int(SCAN_MAX))],
+                stdout=lf, stderr=subprocess.STDOUT)
+        ongoing[jobkey(job)] = {"proc": proc, "job": job, "out": None, "base": base}
+        return
     end = job_end(job, now)
     secs = CHUNK
     if end is not None:
@@ -248,7 +350,7 @@ def collect_fax(seen):
 def retention():
     cutoff = time.time() - RETENTION_DAYS * 86400
     n = 0
-    for kind in ("audio", "fax", "quarantaene"):
+    for kind in ("audio", "fax", "quarantaene", "scan"):
         base = os.path.join(ARCH, kind)
         for root, _dirs, files in os.walk(base):
             for name in files:
@@ -275,6 +377,7 @@ def main():
     seen_fax = set()
     last_fax = 0.0
     last_ret = 0.0
+    last_drm = 0.0
     while not stop:
         now = dt.datetime.now(dt.timezone.utc)
         if time.time() - last_fax > 300:
@@ -283,32 +386,63 @@ def main():
         if time.time() - last_ret > 86400:
             retention()
             last_ret = time.time()
+        if time.time() - last_drm > DRM_TTL:
+            try:
+                doc = drm_fetch.fetch_and_write()
+                log("DRM-FETCH", doc["count"], "Eintraege")
+            except Exception as e:  # noqa: BLE001
+                log("DRM-FETCH-FEHLER", e)
+            last_drm = time.time()
         try:
             entries = load_sched()
         except OSError:
             pass
-        want = {jobkey(j): j for j in desired_jobs(entries, now)}
-        for key in [k for k in ongoing if k not in want]:
-            try:
-                ongoing[key]["proc"].terminate()
-            except OSError:
-                pass
+        # 1) fertige Jobs verarbeiten (setzt ggf. Rausch-Sperre)
         for key, entry in list(ongoing.items()):
             rc = entry["proc"].poll()
             if rc is None:
                 continue
             del ongoing[key]
+            last_finish[key] = time.time()
             if stop:
                 continue
+            if entry["out"] is None:
+                log("SCAN-ENDE rc=", rc, entry["base"])
+                continue
+            if rc == 3:
+                suppressed[key] = window_end_epoch(entry["job"], now)
+                log("RAUSCHEN verworfen – Job fuers Fenster gesperrt", entry["base"])
+                continue
+            if rc == 1:
+                retry_after[key] = time.time() + NO_AUDIO_COOLDOWN
+                log("KEIN-AUDIO rc=", rc, entry["base"], f"({NO_AUDIO_COOLDOWN}s Pause)")
+                continue
             if rc != 0 or not os.path.exists(entry["out"]):
-                log("REC-FEHLER rc=", rc, entry["base"], "(60s Pause)")
-                time.sleep(60)
+                retry_after[key] = time.time() + ERROR_COOLDOWN
+                log("REC-FEHLER rc=", rc, entry["base"], f"({ERROR_COOLDOWN}s Pause)")
                 continue
             finish_chunk(key, entry)
+        # 2) Soll-Zustand (inkl. Auto-Scan-Fallback) aus aktueller Sperrlage
+        want = compute_want(entries, now)
+        for key in [k for k in ongoing if k not in want]:
+            try:
+                ongoing[key]["proc"].terminate()
+            except OSError:
+                pass
+        # 3) fehlende Jobs starten
         if not stop:
             for key, job in want.items():
-                if key not in ongoing:
-                    start_chunk(job)
+                if key in ongoing:
+                    continue
+                if not job.get("scan") and is_suppressed(job, now):
+                    continue
+                if time.time() < retry_after.get(key, 0):
+                    continue
+                if job.get("scan"):
+                    cd = AUTOSCAN_COOLDOWN if job.get("fallback") else SCAN_COOLDOWN
+                    if time.time() - last_finish.get(key, 0) < cd:
+                        continue
+                start_chunk(job)
         write_now([e["job"] for e in ongoing.values()] or
                   [want[k] for k in want] or [])
         time.sleep(TICK)
